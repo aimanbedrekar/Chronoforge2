@@ -3895,11 +3895,7 @@ async function initAuth() {
       updateUserUI(result.data.user);
       const activeView = $(".view.active");
       if (!activeView || activeView.id === "view-auth") {
-        if (result.data.user.role === "admin") {
-          setView("admindashboard");
-        } else {
-          setView("dashboard");
-        }
+        setView("admindashboard");
       }
     } else {
       logout(false);
@@ -3912,24 +3908,18 @@ async function initAuth() {
 function updateUserUI(user) {
   state.currentUser = user;
   const badge = $("#userProfileBadge");
-  const adminNav = $("#navAdminDashboard");
   const mainNav = $("#mainNav");
 
   if (user) {
     if (badge) {
       badge.hidden = false;
-      $("#userNameText").textContent = user.username;
+      const nameText = $("#userNameText");
+      if (nameText) nameText.textContent = user.username;
       const roleTag = $("#userRoleTag");
-      roleTag.textContent = user.role.toUpperCase();
-      if (user.role === "admin") {
-        roleTag.classList.remove("role-user");
-      } else {
-        roleTag.classList.add("role-user");
+      if (roleTag) {
+        roleTag.textContent = "ADMIN";
+        roleTag.className = "user-role-tag badge-role-admin";
       }
-    }
-
-    if (adminNav) {
-      adminNav.hidden = (user.role !== "admin");
     }
 
     if (mainNav) {
@@ -3937,7 +3927,6 @@ function updateUserUI(user) {
     }
   } else {
     if (badge) badge.hidden = true;
-    if (adminNav) adminNav.hidden = true;
     if (mainNav) mainNav.style.display = "none";
   }
 }
@@ -3946,12 +3935,18 @@ async function handleLogin(e) {
   if (e) e.preventDefault();
   const username = $("#loginUsername").value.trim();
   const password = $("#loginPassword").value.trim();
+  const submitBtn = $("#loginSubmitBtn");
   hideAlert("#authErrorAlert");
   hideAlert("#authSuccessAlert");
 
   if (!username || !password) {
-    showAlert("#authErrorAlert", "Please enter both username/email and password.");
+    showAlert("#authErrorAlert", "Please enter both Admin ID / Username and Password.");
     return;
+  }
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = "<span>Authenticating…</span>";
   }
 
   try {
@@ -3964,55 +3959,16 @@ async function handleLogin(e) {
       state.authToken = result.data.token;
       localStorage.setItem("cf_auth_token", result.data.token);
       updateUserUI(result.data.user);
-      toast(`Welcome back, ${result.data.user.username}!`, "success");
-
-      // REDIRECTION LOGIC: Admin -> Admin Dashboard, Normal User -> Real Page
-      if (result.data.user.role === "admin") {
-        setView("admindashboard");
-      } else {
-        setView("dashboard");
-      }
+      toast(`Welcome back, Administrator ${result.data.user.username}!`, "success");
+      setView("admindashboard");
     }
   } catch (error) {
-    showAlert("#authErrorAlert", error.message || "Login failed.");
-  }
-}
-
-async function handleSignup(e) {
-  if (e) e.preventDefault();
-  const username = $("#signupUsername").value.trim();
-  const email = $("#signupEmail").value.trim();
-  const password = $("#signupPassword").value.trim();
-  const role = $("#signupRole").value;
-  hideAlert("#authErrorAlert");
-  hideAlert("#authSuccessAlert");
-
-  if (!username || !password) {
-    showAlert("#authErrorAlert", "Please fill in all required fields.");
-    return;
-  }
-
-  try {
-    const result = await apiCall("/auth/signup", {
-      method: "POST",
-      body: JSON.stringify({ username, email, password, role })
-    });
-
-    if (result.success && result.data) {
-      state.authToken = result.data.token;
-      localStorage.setItem("cf_auth_token", result.data.token);
-      updateUserUI(result.data.user);
-      toast(`Account created! Logged in as ${result.data.user.username}.`, "success");
-
-      // REDIRECTION LOGIC: Admin -> Admin Dashboard, Normal User -> Real Page
-      if (result.data.user.role === "admin") {
-        setView("admindashboard");
-      } else {
-        setView("dashboard");
-      }
+    showAlert("#authErrorAlert", error.message || "Authentication failed. Please verify your credentials.");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = "<span>⚡ Authenticate & Sign In</span>";
     }
-  } catch (error) {
-    showAlert("#authErrorAlert", error.message || "Registration failed.");
   }
 }
 
@@ -4026,32 +3982,37 @@ async function logout(notify = true) {
   localStorage.removeItem("cf_auth_token");
   updateUserUI(null);
   setView("auth");
-  if (notify) toast("Logged out successfully.", "info");
+  if (notify) toast("Administrator logged out successfully.", "info");
 }
 
 
 /* ========================================================================== */
-/* ADMIN DASHBOARD LOGIC & MANAGEMENT                                         */
+/* ADMIN DASHBOARD LOGIC & MULTI-ADMIN MANAGEMENT                             */
 /* ========================================================================== */
 
 async function loadAdminStats() {
-  if (!state.currentUser || state.currentUser.role !== "admin") return;
+  if (!state.currentUser) return;
 
   try {
     const result = await apiCall("/admin/stats");
     if (result.success && result.data && result.data.stats) {
       const s = result.data.stats;
-      if ($("#statTotalUsers")) $("#statTotalUsers").textContent = s.total_users;
-      if ($("#statUsersBreakdown")) $("#statUsersBreakdown").textContent = `Admins: ${s.admin_count} | Normal Users: ${s.user_count}`;
+      const totalAdmins = s.total_admins || s.admin_count || 1;
+      if ($("#statTotalUsers")) $("#statTotalUsers").textContent = `${totalAdmins} Admin${totalAdmins === 1 ? '' : 's'}`;
+      if ($("#statUsersBreakdown")) $("#statUsersBreakdown").textContent = `Multi-Admin System • Session: ${s.current_admin || state.currentUser.username}`;
 
-      if ($("#statTotalSchedules")) $("#statTotalSchedules").textContent = s.total_schedules;
-      if ($("#statScheduleActive")) $("#statScheduleActive").textContent = s.active_version ? `Active: Version ${s.active_version} (${s.active_items_count} rows)` : "No active schedule";
+      if ($("#statTotalSchedules")) $("#statTotalSchedules").textContent = s.active_version ? `v${s.active_version} Active` : `${s.total_schedules} Version${s.total_schedules === 1 ? '' : 's'}`;
+      if ($("#statScheduleActive")) $("#statScheduleActive").textContent = s.active_items_count ? `${s.active_items_count} Scheduled Bell Rows` : "No active schedule loaded";
 
-      if ($("#statEspStatus")) $("#statEspStatus").textContent = s.mock_mode ? "MOCK MODE" : "HARDWARE";
+      if ($("#statEspStatus")) {
+        const statusEl = $("#statEspStatus");
+        statusEl.textContent = s.mock_mode ? "DEV MOCK" : "HARDWARE";
+        statusEl.style.color = s.mock_mode ? "var(--accent)" : "var(--good)";
+      }
       if ($("#statEspTarget")) $("#statEspTarget").textContent = `Target: ${s.esp32_host}:${s.esp32_port}`;
 
       if ($("#statTotalLogs")) $("#statTotalLogs").textContent = s.total_logs;
-      if ($("#statLogAlerts")) $("#statLogAlerts").textContent = `Errors / Warnings: ${s.error_logs}`;
+      if ($("#statLogAlerts")) $("#statLogAlerts").textContent = `Alerts / Errors: ${s.error_logs || 0}`;
 
       const toggle = $("#adminMockToggle");
       if (toggle) toggle.checked = s.mock_mode;
@@ -4059,10 +4020,12 @@ async function loadAdminStats() {
   } catch (error) {
     toast(`Failed to load admin stats: ${error.message}`, "error");
   }
+
+  loadAdminRecentLogs();
 }
 
 async function loadAdminUsers() {
-  if (!state.currentUser || state.currentUser.role !== "admin") return;
+  if (!state.currentUser) return;
 
   try {
     const result = await apiCall("/admin/users");
@@ -4070,101 +4033,204 @@ async function loadAdminUsers() {
     if (!body) return;
 
     if (!result.success || !result.data.users || result.data.users.length === 0) {
-      body.innerHTML = '<tr class="empty-row"><td colspan="6">No users found.</td></tr>';
+      body.innerHTML = '<tr class="empty-row"><td colspan="6">No administrators found.</td></tr>';
       return;
     }
 
+    const totalAdmins = result.data.users.length;
+
     body.innerHTML = result.data.users.map(u => {
       const isSelf = (state.currentUser && state.currentUser.id === u.id);
-      const roleBadge = u.role === "admin" 
-        ? '<span class="badge-role-admin">ADMIN</span>' 
-        : '<span class="badge-role-user">USER</span>';
-      
-      const toggleRoleAction = isSelf ? '' : `
-        <button class="btn btn-ghost btn-sm" onclick="toggleUserRole(${u.id}, '${u.role}')">
-          ${u.role === "admin" ? "Demote" : "Promote"}
+      const roleBadge = '<span class="badge-role-admin">ADMIN</span>';
+
+      const changePwAction = `
+        <button class="btn btn-ghost btn-sm" onclick="openChangePasswordModal(${u.id}, '${escapeHtml(u.username)}')" title="Change administrator password">
+          🔑 Password
         </button>
       `;
 
-      const deleteAction = isSelf ? '<span class="meta-val">(You)</span>' : `
-        <button class="btn btn-ghost btn-sm text-warn" onclick="deleteUserAccount(${u.id}, '${escapeHtml(u.username)}')">
-          Delete
-        </button>
-      `;
+      let deleteAction = '';
+      if (isSelf) {
+        deleteAction = '<span class="meta-val" title="Current Active Session" style="font-size: 11px;">(Active Session)</span>';
+      } else if (totalAdmins <= 1) {
+        deleteAction = '<span class="meta-val" title="Only remaining admin" style="font-size: 11px;">(Sole Admin)</span>';
+      } else {
+        deleteAction = `
+          <button class="btn btn-ghost btn-sm text-warn" onclick="deleteAdminAccount(${u.id}, '${escapeHtml(u.username)}')" title="Delete administrator account">
+            🗑️ Delete
+          </button>
+        `;
+      }
 
       return `
         <tr>
           <td><strong>#${u.id}</strong></td>
-          <td><strong>${escapeHtml(u.username)}</strong><br><small class="meta-val">${escapeHtml(u.email || "No email")}</small></td>
+          <td>
+            <strong>${escapeHtml(u.username)}</strong>
+            ${isSelf ? ' <small style="color: var(--accent); font-weight:600;">(You)</small>' : ''}
+            <br><small class="meta-val">${escapeHtml(u.email || "No email provided")}</small>
+          </td>
           <td>${roleBadge}</td>
           <td><small>${fmtTimestamp(u.created_at)}</small></td>
           <td><small>${fmtTimestamp(u.last_login)}</small></td>
-          <td>
-            ${toggleRoleAction}
+          <td style="white-space: nowrap;">
+            ${changePwAction}
             ${deleteAction}
           </td>
         </tr>
       `;
     }).join("");
   } catch (error) {
-    toast(`Failed to load users: ${error.message}`, "error");
+    toast(`Failed to load administrators: ${error.message}`, "error");
   }
 }
-
-async function toggleUserRole(userId, currentRole) {
-  const newRole = currentRole === "admin" ? "user" : "admin";
-  try {
-    const res = await apiCall(`/admin/users/${userId}/role`, {
-      method: "PUT",
-      body: JSON.stringify({ role: newRole })
-    });
-    if (res.success) {
-      toast(res.message, "success");
-      loadAdminUsers();
-      loadAdminStats();
-    }
-  } catch (err) {
-    toast(err.message, "error");
-  }
-}
-window.toggleUserRole = toggleUserRole;
-
-async function deleteUserAccount(userId, username) {
-  if (!confirm(`Are you sure you want to delete user '${username}'?`)) return;
-  try {
-    const res = await apiCall(`/admin/users/${userId}`, { method: "DELETE" });
-    if (res.success) {
-      toast(res.message, "success");
-      loadAdminUsers();
-      loadAdminStats();
-    }
-  } catch (err) {
-    toast(err.message, "error");
-  }
-}
-window.deleteUserAccount = deleteUserAccount;
 
 async function handleAdminAddUser(e) {
   if (e) e.preventDefault();
   const username = $("#adminNewUsername").value.trim();
   const email = $("#adminNewEmail").value.trim();
   const password = $("#adminNewPassword").value.trim();
-  const role = $("#adminNewRole").value;
+  const confirmPassword = $("#adminNewPasswordConfirm") ? $("#adminNewPasswordConfirm").value.trim() : password;
+
+  if (username.length < 3) {
+    toast("Admin User ID must be at least 3 characters.", "error");
+    return;
+  }
+  if (password.length < 4) {
+    toast("Password must be at least 4 characters.", "error");
+    return;
+  }
+  if (password !== confirmPassword) {
+    toast("Passwords do not match.", "error");
+    return;
+  }
+
+  const submitBtn = $("#submitNewAdminBtn");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Creating…";
+  }
 
   try {
     const res = await apiCall("/admin/users", {
       method: "POST",
-      body: JSON.stringify({ username, email, password, role })
+      body: JSON.stringify({ username, email, password, role: "admin" })
     });
     if (res.success) {
-      toast(res.message, "success");
-      $("#adminAddUserForm").reset();
-      $("#adminAddUserForm").hidden = true;
+      toast(res.message || `Administrator '${username}' created!`, "success");
+      const form = $("#adminAddUserForm");
+      if (form) {
+        form.reset();
+        form.hidden = true;
+      }
       loadAdminUsers();
       loadAdminStats();
     }
   } catch (err) {
-    toast(err.message, "error");
+    toast(err.message || "Failed to create administrator.", "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Create Admin Account";
+    }
+  }
+}
+
+function openChangePasswordModal(userId, username) {
+  const modal = $("#changePasswordModal");
+  if (!modal) return;
+  $("#changePasswordUserId").value = userId;
+  $("#changePasswordTargetName").textContent = username;
+  $("#newAdminPasswordInput").value = "";
+  $("#confirmNewAdminPasswordInput").value = "";
+  modal.hidden = false;
+  $("#newAdminPasswordInput").focus();
+}
+window.openChangePasswordModal = openChangePasswordModal;
+
+async function handleUpdatePassword(e) {
+  if (e) e.preventDefault();
+  const userId = $("#changePasswordUserId").value;
+  const newPassword = $("#newAdminPasswordInput").value.trim();
+  const confirmPassword = $("#confirmNewAdminPasswordInput").value.trim();
+
+  if (!newPassword || newPassword.length < 4) {
+    toast("New password must be at least 4 characters long.", "error");
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    toast("New passwords do not match.", "error");
+    return;
+  }
+
+  const submitBtn = $("#changePasswordSubmit");
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Updating…";
+  }
+
+  try {
+    const res = await apiCall(`/admin/users/${userId}/password`, {
+      method: "PUT",
+      body: JSON.stringify({ password: newPassword })
+    });
+    if (res.success) {
+      toast(res.message || "Administrator password updated!", "success");
+      $("#changePasswordModal").hidden = true;
+      loadAdminRecentLogs();
+    }
+  } catch (err) {
+    toast(err.message || "Failed to update password.", "error");
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = "Update Password";
+    }
+  }
+}
+
+async function deleteAdminAccount(userId, username) {
+  if (!confirm(`Are you sure you want to delete administrator account '${username}'? This cannot be undone.`)) return;
+  try {
+    const res = await apiCall(`/admin/users/${userId}`, { method: "DELETE" });
+    if (res.success) {
+      toast(res.message || `Administrator '${username}' has been deleted.`, "success");
+      loadAdminUsers();
+      loadAdminStats();
+    }
+  } catch (err) {
+    toast(err.message || "Failed to delete administrator.", "error");
+  }
+}
+window.deleteAdminAccount = deleteAdminAccount;
+
+async function loadAdminRecentLogs() {
+  const body = $("#adminRecentLogsBody");
+  if (!body) return;
+
+  try {
+    const res = await apiCall("/admin/recent-logs");
+    if (!res.success || !res.data.logs || res.data.logs.length === 0) {
+      body.innerHTML = '<tr class="empty-row"><td colspan="4">No recent activity recorded.</td></tr>';
+      return;
+    }
+
+    body.innerHTML = res.data.logs.map(log => {
+      let levelClass = "pill-good";
+      if (log.level === "WARNING") levelClass = "pill-warn";
+      if (log.level === "ERROR") levelClass = "pill-bad";
+
+      return `
+        <tr>
+          <td><small class="meta-val">${fmtTimestamp(log.timestamp)}</small></td>
+          <td><span class="pill ${levelClass}"><i class="dot"></i> ${escapeHtml(log.level)}</span></td>
+          <td><strong>${escapeHtml(log.event)}</strong></td>
+          <td><small>${escapeHtml(log.details || "—")}</small></td>
+        </tr>
+      `;
+    }).join("");
+  } catch (e) {
+    body.innerHTML = '<tr class="empty-row"><td colspan="4">Failed to load recent activity.</td></tr>';
   }
 }
 
@@ -4174,59 +4240,29 @@ async function handleAdminAddUser(e) {
 /* ========================================================================== */
 
 function setupAuthAndAdminEvents() {
-  // Auth Form Switches
-  const tabLogin = $("#tabLoginBtn");
-  const tabSignup = $("#tabSignupBtn");
+  // Login Form
   const loginForm = $("#loginForm");
-  const signupForm = $("#signupForm");
+  if (loginForm) loginForm.addEventListener("submit", handleLogin);
 
-  if (tabLogin && tabSignup) {
-    tabLogin.addEventListener("click", () => {
-      tabLogin.classList.add("active");
-      tabSignup.classList.remove("active");
-      loginForm.classList.add("active");
-      loginForm.hidden = false;
-      loginForm.style.display = "flex";
-      signupForm.classList.remove("active");
-      signupForm.hidden = true;
-      signupForm.style.display = "none";
-      hideAlert("#authErrorAlert");
-      hideAlert("#authSuccessAlert");
-    });
-
-    tabSignup.addEventListener("click", () => {
-      tabSignup.classList.add("active");
-      tabLogin.classList.remove("active");
-      signupForm.classList.add("active");
-      signupForm.hidden = false;
-      signupForm.style.display = "flex";
-      loginForm.classList.remove("active");
-      loginForm.hidden = true;
-      loginForm.style.display = "none";
-      hideAlert("#authErrorAlert");
-      hideAlert("#authSuccessAlert");
+  // Show/Hide Password Toggle
+  const togglePwBtn = $("#toggleLoginPasswordBtn");
+  const loginPwInput = $("#loginPassword");
+  if (togglePwBtn && loginPwInput) {
+    togglePwBtn.addEventListener("click", () => {
+      const isPassword = loginPwInput.type === "password";
+      loginPwInput.type = isPassword ? "text" : "password";
+      togglePwBtn.textContent = isPassword ? "🙈" : "👁️";
     });
   }
 
-  if (loginForm) loginForm.addEventListener("submit", handleLogin);
-  if (signupForm) signupForm.addEventListener("submit", handleSignup);
-
-  // Quick Demo Account Buttons
+  // Quick Demo / Fill Credentials Button
   const demoAdmin = $("#demoAdminBtn");
-  const demoUser = $("#demoUserBtn");
-
   if (demoAdmin) {
     demoAdmin.addEventListener("click", () => {
-      $("#loginUsername").value = "admin";
-      $("#loginPassword").value = "admin123";
-      handleLogin();
-    });
-  }
-
-  if (demoUser) {
-    demoUser.addEventListener("click", () => {
-      $("#loginUsername").value = "user";
-      $("#loginPassword").value = "user123";
+      const u = $("#loginUsername");
+      const p = $("#loginPassword");
+      if (u) u.value = "admin";
+      if (p) p.value = "admin123";
       handleLogin();
     });
   }
@@ -4235,16 +4271,17 @@ function setupAuthAndAdminEvents() {
   const logoutBtn = $("#logoutBtn");
   if (logoutBtn) logoutBtn.addEventListener("click", () => logout(true));
 
-  // Admin Dashboard Controls
+  // Admin Dashboard Refresh Button
   const refreshStatsBtn = $("#refreshAdminStatsBtn");
   if (refreshStatsBtn) {
     refreshStatsBtn.addEventListener("click", () => {
       loadAdminStats();
       loadAdminUsers();
-      toast("Admin data refreshed.", "info");
+      toast("Admin Dashboard refreshed.", "info");
     });
   }
 
+  // Add Admin Inline Form Toggle & Cancel
   const toggleAddBtn = $("#toggleAddUserBtn");
   const cancelAddBtn = $("#cancelAddUserBtn");
   const addUserForm = $("#adminAddUserForm");
@@ -4252,6 +4289,9 @@ function setupAuthAndAdminEvents() {
   if (toggleAddBtn && addUserForm) {
     toggleAddBtn.addEventListener("click", () => {
       addUserForm.hidden = !addUserForm.hidden;
+      if (!addUserForm.hidden) {
+        $("#adminNewUsername").focus();
+      }
     });
   }
   if (cancelAddBtn && addUserForm) {
@@ -4262,6 +4302,19 @@ function setupAuthAndAdminEvents() {
   }
   if (addUserForm) addUserForm.addEventListener("submit", handleAdminAddUser);
 
+  // Change Password Modal Events
+  const changePasswordForm = $("#changePasswordForm");
+  const changePasswordCancel = $("#changePasswordCancel");
+  const changePasswordModal = $("#changePasswordModal");
+
+  if (changePasswordForm) changePasswordForm.addEventListener("submit", handleUpdatePassword);
+  if (changePasswordCancel && changePasswordModal) {
+    changePasswordCancel.addEventListener("click", () => {
+      changePasswordModal.hidden = true;
+    });
+  }
+
+  // Admin Mock Mode Toggle
   const mockToggle = $("#adminMockToggle");
   if (mockToggle) {
     mockToggle.addEventListener("change", async () => {
@@ -4271,7 +4324,7 @@ function setupAuthAndAdminEvents() {
           body: JSON.stringify({ mock_mode: mockToggle.checked })
         });
         if (res.success) {
-          toast(`Mock Mode set to ${mockToggle.checked ? "ENABLED" : "DISABLED"}.`, "success");
+          toast(`Hardware Mock Mode set to ${mockToggle.checked ? "ENABLED" : "DISABLED"}.`, "success");
           loadAdminStats();
           refreshStatus();
         }
@@ -4281,13 +4334,15 @@ function setupAuthAndAdminEvents() {
     });
   }
 
+  // Admin Manual Bell Test
   const adminTestBellBtn = $("#adminTestBellBtn");
   if (adminTestBellBtn) {
     adminTestBellBtn.addEventListener("click", async () => {
       try {
         const res = await apiCall("/bell/test", { method: "POST" });
         if (res.success) {
-          toast(res.message || "Test bell activated!", "success");
+          toast(res.message || "Test bell relay activated!", "success");
+          loadAdminRecentLogs();
         }
       } catch (err) {
         toast(err.message, "error");
@@ -4295,10 +4350,11 @@ function setupAuthAndAdminEvents() {
     });
   }
 
+  // Admin Purge Historical Schedules
   const purgeBtn = $("#adminPurgeSchedulesBtn");
   if (purgeBtn) {
     purgeBtn.addEventListener("click", async () => {
-      if (!confirm("Are you sure you want to purge all historical schedule versions?")) return;
+      if (!confirm("Are you sure you want to purge all historical schedule archives? The currently active schedule will be safely retained.")) return;
       try {
         const res = await apiCall("/admin/schedules/purge", { method: "POST" });
         if (res.success) {
@@ -4311,9 +4367,11 @@ function setupAuthAndAdminEvents() {
     });
   }
 
+  // Admin Clear Activity Logs
+  const clearLogsBtn = $("#adminClearLogsBtn");
   if (clearLogsBtn) {
     clearLogsBtn.addEventListener("click", async () => {
-      if (!confirm("Are you sure you want to clear all system activity logs?")) return;
+      if (!confirm("Are you sure you want to permanently clear all system activity logs?")) return;
       try {
         const res = await apiCall("/admin/logs/clear", { method: "POST" });
         if (res.success) {

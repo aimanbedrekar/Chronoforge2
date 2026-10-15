@@ -201,20 +201,19 @@ def init_db():
                 )
             )
 
-        # Seed default Admin and User accounts if no users exist
-        cursor.execute("SELECT COUNT(*) as cnt FROM users")
+        # Remove any legacy normal user accounts (Admin-only system)
+        cursor.execute("DELETE FROM users WHERE role != 'admin'")
+        cursor.execute("DELETE FROM sessions WHERE user_id NOT IN (SELECT id FROM users)")
+
+        # Seed default Admin account if no admin accounts exist
+        cursor.execute("SELECT COUNT(*) as cnt FROM users WHERE role = 'admin'")
         if cursor.fetchone()["cnt"] == 0:
             now_str = datetime.now().astimezone().isoformat(timespec="seconds")
             admin_pw = generate_password_hash("admin123")
-            user_pw = generate_password_hash("user123")
             cursor.execute("""
                 INSERT INTO users (username, email, password_hash, role, created_at, last_login)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, ("admin", "admin@chronoforge.com", admin_pw, "admin", now_str, now_str))
-            cursor.execute("""
-                INSERT INTO users (username, email, password_hash, role, created_at, last_login)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, ("user", "user@chronoforge.com", user_pw, "user", now_str, now_str))
 
         conn.commit()
 
@@ -2638,64 +2637,10 @@ def get_current_user(req):
 
 @app.route("/api/auth/signup", methods=["POST"])
 def auth_signup():
-    data = request.get_json(silent=True) or {}
-    username = str(data.get("username", "")).strip()
-    email = str(data.get("email", "")).strip().lower()
-    password = str(data.get("password", "")).strip()
-    role = str(data.get("role", "user")).strip().lower()
-
-    if role not in ("admin", "user"):
-        role = "user"
-
-    if not username or len(username) < 3:
-        return jsonify({"success": False, "message": "Username must be at least 3 characters long."}), 400
-    if not password or len(password) < 4:
-        return jsonify({"success": False, "message": "Password must be at least 4 characters long."}), 400
-
-    conn = get_db()
-    existing = conn.execute("SELECT id FROM users WHERE username = ? OR (email != '' AND email = ?)", (username, email)).fetchone()
-    if existing:
-        conn.close()
-        return jsonify({"success": False, "message": "Username or email is already taken."}), 400
-
-    password_hash = generate_password_hash(password)
-    created_at = now_iso()
-
-    with db_lock:
-        cursor = conn.cursor()
-        cursor.execute("""
-            INSERT INTO users (username, email, password_hash, role, created_at, last_login)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (username, email, password_hash, role, created_at, created_at))
-        user_id = cursor.lastrowid
-
-        token = str(uuid.uuid4())
-        cursor.execute("""
-            INSERT INTO sessions (token, user_id, created_at)
-            VALUES (?, ?, ?)
-        """, (token, user_id, created_at))
-        conn.commit()
-    conn.close()
-
-    log_event("INFO", "User registration", f"New user registered: {username} (Role: {role})")
-
-    user_info = {
-        "id": user_id,
-        "username": username,
-        "email": email,
-        "role": role,
-        "created_at": created_at,
-        "last_login": created_at
-    }
-
     return jsonify({
-        "success": True,
-        "message": f"Account created successfully as {role.upper()}.",
-        "data": {
-            "user": user_info,
-            "token": token
-        }
-    })
+        "success": False,
+        "message": "Public registration is disabled. Administrator accounts must be created by an active administrator from the Admin Dashboard."
+    }), 403
 
 
 @app.route("/api/auth/login", methods=["POST"])
@@ -2705,7 +2650,7 @@ def auth_login():
     password = str(data.get("password", "")).strip()
 
     if not username_or_email or not password:
-        return jsonify({"success": False, "message": "Please enter both username/email and password."}), 400
+        return jsonify({"success": False, "message": "Please enter both Admin ID / Username and Password."}), 400
 
     conn = get_db()
     user_row = conn.execute("""
@@ -2715,7 +2660,11 @@ def auth_login():
 
     if not user_row or not check_password_hash(user_row["password_hash"], password):
         conn.close()
-        return jsonify({"success": False, "message": "Invalid username/email or password."}), 401
+        return jsonify({"success": False, "message": "Invalid administrator credentials."}), 401
+
+    if user_row["role"] != "admin":
+        conn.close()
+        return jsonify({"success": False, "message": "Access restricted. Only administrators are authorized."}), 403
 
     login_time = now_iso()
     token = str(uuid.uuid4())
@@ -2731,16 +2680,16 @@ def auth_login():
         "id": user_row["id"],
         "username": user_row["username"],
         "email": user_row["email"],
-        "role": user_row["role"],
+        "role": "admin",
         "created_at": user_row["created_at"],
         "last_login": login_time
     }
 
-    log_event("INFO", "User login", f"User '{user_row['username']}' logged in successfully (Role: {user_row['role']}).")
+    log_event("INFO", "Admin login", f"Administrator '{user_row['username']}' logged in successfully.")
 
     return jsonify({
         "success": True,
-        "message": f"Welcome back, {user_row['username']}!",
+        "message": f"Welcome back, Administrator {user_row['username']}!",
         "data": {
             "user": user_info,
             "token": token
@@ -2786,9 +2735,7 @@ def admin_stats():
         return jsonify({"success": False, "message": "Access denied. Admin privileges required."}), 403
 
     conn = get_db()
-    total_users = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
-    admin_count = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
-    user_count = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'user'").fetchone()[0]
+    total_admins = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
 
     total_schedules = conn.execute("SELECT COUNT(*) FROM schedules").fetchone()[0]
     active_sched = conn.execute("SELECT * FROM schedules ORDER BY id DESC LIMIT 1").fetchone()
@@ -2803,7 +2750,7 @@ def admin_stats():
 
     total_logs = conn.execute("SELECT COUNT(*) FROM logs").fetchone()[0]
     error_logs = conn.execute("SELECT COUNT(*) FROM logs WHERE level IN ('ERROR', 'WARNING')").fetchone()[0]
-    latest_user = conn.execute("SELECT username, role, created_at FROM users ORDER BY id DESC LIMIT 1").fetchone()
+    latest_admin = conn.execute("SELECT username, role, created_at FROM users WHERE role = 'admin' ORDER BY id DESC LIMIT 1").fetchone()
 
     conn.close()
 
@@ -2815,9 +2762,10 @@ def admin_stats():
         "success": True,
         "data": {
             "stats": {
-                "total_users": total_users,
-                "admin_count": admin_count,
-                "user_count": user_count,
+                "total_users": total_admins,
+                "total_admins": total_admins,
+                "admin_count": total_admins,
+                "user_count": 0,
                 "total_schedules": total_schedules,
                 "active_version": active_version,
                 "active_items_count": active_items_count,
@@ -2826,7 +2774,8 @@ def admin_stats():
                 "mock_mode": mock_mode,
                 "esp32_host": esp32_host,
                 "esp32_port": esp32_port,
-                "latest_user": dict(latest_user) if latest_user else None
+                "latest_user": dict(latest_admin) if latest_admin else None,
+                "current_admin": current_user["username"]
             }
         }
     })
@@ -2839,7 +2788,7 @@ def admin_get_users():
         return jsonify({"success": False, "message": "Access denied. Admin privileges required."}), 403
 
     conn = get_db()
-    rows = conn.execute("SELECT id, username, email, role, created_at, last_login FROM users ORDER BY id DESC").fetchall()
+    rows = conn.execute("SELECT id, username, email, role, created_at, last_login FROM users WHERE role = 'admin' ORDER BY id ASC").fetchall()
     conn.close()
 
     users_list = [dict(r) for r in rows]
@@ -2856,13 +2805,9 @@ def admin_create_user():
     username = str(data.get("username", "")).strip()
     email = str(data.get("email", "")).strip().lower()
     password = str(data.get("password", "")).strip()
-    role = str(data.get("role", "user")).strip().lower()
-
-    if role not in ("admin", "user"):
-        role = "user"
 
     if not username or len(username) < 3:
-        return jsonify({"success": False, "message": "Username must be at least 3 characters."}), 400
+        return jsonify({"success": False, "message": "Admin User ID / Username must be at least 3 characters."}), 400
     if not password or len(password) < 4:
         return jsonify({"success": False, "message": "Password must be at least 4 characters."}), 400
 
@@ -2870,7 +2815,7 @@ def admin_create_user():
     existing = conn.execute("SELECT id FROM users WHERE username = ? OR (email != '' AND email = ?)", (username, email)).fetchone()
     if existing:
         conn.close()
-        return jsonify({"success": False, "message": "Username or email already exists."}), 400
+        return jsonify({"success": False, "message": "Admin username or email already exists."}), 400
 
     password_hash = generate_password_hash(password)
     created_at = now_iso()
@@ -2879,45 +2824,43 @@ def admin_create_user():
         cursor = conn.cursor()
         cursor.execute("""
             INSERT INTO users (username, email, password_hash, role, created_at, last_login)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (username, email, password_hash, role, created_at, created_at))
+            VALUES (?, ?, ?, 'admin', ?, ?)
+        """, (username, email, password_hash, created_at, created_at))
         user_id = cursor.lastrowid
         conn.commit()
     conn.close()
 
-    log_event("INFO", "Admin user creation", f"Admin '{current_user['username']}' created user '{username}' (Role: {role}).")
+    log_event("INFO", "Admin created admin", f"Administrator '{current_user['username']}' created new administrator '{username}'.")
 
-    return jsonify({"success": True, "message": f"User '{username}' created successfully."})
+    return jsonify({"success": True, "message": f"Administrator '{username}' created successfully."})
 
 
-@app.route("/api/admin/users/<int:user_id>/role", methods=["PUT"])
-def admin_update_user_role(user_id):
+@app.route("/api/admin/users/<int:user_id>/password", methods=["PUT"])
+def admin_update_user_password(user_id):
     current_user = get_current_user(request)
     if not current_user or current_user["role"] != "admin":
         return jsonify({"success": False, "message": "Access denied. Admin privileges required."}), 403
 
-    if current_user["id"] == user_id:
-        return jsonify({"success": False, "message": "You cannot change your own admin role."}), 400
-
     data = request.get_json(silent=True) or {}
-    new_role = str(data.get("role", "")).strip().lower()
-    if new_role not in ("admin", "user"):
-        return jsonify({"success": False, "message": "Role must be 'admin' or 'user'."}), 400
+    new_password = str(data.get("password", "")).strip()
+    if not new_password or len(new_password) < 4:
+        return jsonify({"success": False, "message": "New password must be at least 4 characters long."}), 400
 
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE id = ? AND role = 'admin'", (user_id,)).fetchone()
     if not user:
         conn.close()
-        return jsonify({"success": False, "message": "User not found."}), 404
+        return jsonify({"success": False, "message": "Administrator account not found."}), 404
 
+    password_hash = generate_password_hash(new_password)
     with db_lock:
-        conn.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, user_id))
+        conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
         conn.commit()
     conn.close()
 
-    log_event("INFO", "Admin role updated", f"Role of user '{user['username']}' changed to '{new_role}' by admin '{current_user['username']}'.")
+    log_event("INFO", "Admin password reset", f"Administrator '{current_user['username']}' updated password for administrator '{user['username']}'.")
 
-    return jsonify({"success": True, "message": f"User '{user['username']}' role updated to {new_role.upper()}."})
+    return jsonify({"success": True, "message": f"Password for administrator '{user['username']}' updated successfully."})
 
 
 @app.route("/api/admin/users/<int:user_id>", methods=["DELETE"])
@@ -2927,13 +2870,18 @@ def admin_delete_user(user_id):
         return jsonify({"success": False, "message": "Access denied. Admin privileges required."}), 403
 
     if current_user["id"] == user_id:
-        return jsonify({"success": False, "message": "You cannot delete your own admin account."}), 400
+        return jsonify({"success": False, "message": "You cannot delete your own active administrator account."}), 400
 
     conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = conn.execute("SELECT * FROM users WHERE id = ? AND role = 'admin'", (user_id,)).fetchone()
     if not user:
         conn.close()
-        return jsonify({"success": False, "message": "User not found."}), 404
+        return jsonify({"success": False, "message": "Administrator not found."}), 404
+
+    admin_count = conn.execute("SELECT COUNT(*) FROM users WHERE role = 'admin'").fetchone()[0]
+    if admin_count <= 1:
+        conn.close()
+        return jsonify({"success": False, "message": "Cannot delete the only remaining administrator account in the system."}), 400
 
     with db_lock:
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
@@ -2941,9 +2889,23 @@ def admin_delete_user(user_id):
         conn.commit()
     conn.close()
 
-    log_event("WARNING", "Admin deleted user", f"User '{user['username']}' deleted by admin '{current_user['username']}'.")
+    log_event("WARNING", "Admin deleted admin", f"Administrator '{user['username']}' was deleted by administrator '{current_user['username']}'.")
 
-    return jsonify({"success": True, "message": f"User '{user['username']}' has been deleted."})
+    return jsonify({"success": True, "message": f"Administrator '{user['username']}' has been deleted."})
+
+
+@app.route("/api/admin/recent-logs", methods=["GET"])
+def admin_recent_logs():
+    current_user = get_current_user(request)
+    if not current_user or current_user["role"] != "admin":
+        return jsonify({"success": False, "message": "Access denied. Admin privileges required."}), 403
+
+    conn = get_db()
+    rows = conn.execute("SELECT id, timestamp, level, event, details FROM logs ORDER BY id DESC LIMIT 10").fetchall()
+    conn.close()
+
+    logs_list = [dict(r) for r in rows]
+    return jsonify({"success": True, "data": {"logs": logs_list}})
 
 
 @app.route("/api/admin/logs/clear", methods=["POST"])

@@ -38,20 +38,20 @@
   </div>
 
   <nav class="main-nav" id="mainNav">
-    <button class="nav-link active" data-view="dashboard" id="navDashboard">Dashboard</button>
-    <button class="nav-link" data-view="timetable">Timetable</button>
-    <button class="nav-link" data-view="bellsystem">Bell System</button>
+    <button class="nav-link nav-admin-link active" data-view="admindashboard" id="navAdminDashboard">⚡ Admin Dashboard</button>
+    <button class="nav-link" data-view="dashboard" id="navDashboard">Timetable Dashboard</button>
+    <button class="nav-link" data-view="timetable">Timetable Editor</button>
+    <button class="nav-link" data-view="bellsystem">Bell Relays</button>
     <button class="nav-link" data-view="diagnostics" id="navDiagnostics">🌐 Diagnostics</button>
     <button class="nav-link" data-view="logs">Activity / Logs</button>
     <button class="nav-link" data-view="settings">Settings</button>
-    <button class="nav-link nav-admin-link" data-view="admindashboard" id="navAdminDashboard" hidden>⚡ Admin Dashboard</button>
   </nav>
 
   <div class="topbar-status">
     <span class="mock-chip" id="mockChip" hidden>DEV MODE</span>
     <span class="pill" id="topEspPill"><i class="dot"></i> ESP32 —</span>
     <div class="user-profile-badge" id="userProfileBadge" hidden>
-      <span class="user-role-tag" id="userRoleTag">USER</span>
+      <span class="user-role-tag badge-role-admin" id="userRoleTag">ADMIN</span>
       <span class="user-name-text" id="userNameText">—</span>
       <button class="btn-logout" id="logoutBtn" title="Log Out">Logout 🚪</button>
     </div>
@@ -85,60 +85,46 @@
             </svg>
           </div>
           <h2>CHRONO<span>FORGE</span></h2>
-          <p class="auth-subtitle">Institutional Bell Control Access</p>
-        </div>
-
-        <div class="auth-tabs">
-          <button class="auth-tab active" id="tabLoginBtn" data-authtab="login">Log In</button>
-          <button class="auth-tab" id="tabSignupBtn" data-authtab="signup">Sign Up</button>
+          <p class="auth-subtitle">Institutional Bell Control System</p>
+          <div class="auth-portal-badge">🛡️ ADMINISTRATOR ACCESS PORTAL</div>
         </div>
 
         <!-- LOGIN FORM -->
         <form class="auth-form active" id="loginForm">
           <label class="field">
-            <span>Username or Email</span>
-            <input type="text" id="loginUsername" placeholder="Enter username or email" required autocomplete="username">
+            <span>Admin User ID / Username</span>
+            <input type="text" id="loginUsername" placeholder="Enter Admin ID (e.g. admin)" required autocomplete="username" autofocus>
           </label>
           <label class="field">
-            <span>Password</span>
-            <input type="password" id="loginPassword" placeholder="Enter password" required autocomplete="current-password">
+            <span>Admin Password</span>
+            <div class="input-with-toggle">
+              <input type="password" id="loginPassword" placeholder="Enter Password" required autocomplete="current-password">
+              <button type="button" class="btn-toggle-pw" id="toggleLoginPasswordBtn" title="Show/Hide Password" aria-label="Toggle password visibility">👁️</button>
+            </div>
           </label>
-          <button type="submit" class="btn btn-primary btn-block" id="loginSubmitBtn">Log In</button>
-        </form>
-
-        <!-- SIGNUP FORM -->
-        <form class="auth-form" id="signupForm" hidden style="display: none;">
-          <label class="field">
-            <span>Username</span>
-            <input type="text" id="signupUsername" placeholder="Choose a username" required autocomplete="username">
-          </label>
-          <label class="field">
-            <span>Email Address</span>
-            <input type="email" id="signupEmail" placeholder="name@institution.edu" required autocomplete="email">
-          </label>
-          <label class="field">
-            <span>Password</span>
-            <input type="password" id="signupPassword" placeholder="Minimum 4 characters" required autocomplete="new-password">
-          </label>
-          <label class="field">
-            <span>Account Type</span>
-            <select id="signupRole">
-              <option value="user" selected>Normal User (Timetable & Bell Controls)</option>
-              <option value="admin">Administrator (Full System & User Control)</option>
-            </select>
-          </label>
-          <button type="submit" class="btn btn-primary btn-block" id="signupSubmitBtn">Create Account & Sign In</button>
+          <button type="submit" class="btn btn-primary btn-block" id="loginSubmitBtn">
+            <span>⚡ Authenticate & Sign In</span>
+          </button>
         </form>
 
         <div class="alert alert-error" id="authErrorAlert" hidden></div>
         <div class="alert alert-good" id="authSuccessAlert" hidden></div>
 
+        <!-- DEFAULT ADMIN CREDENTIALS DISPLAY -->
         <div class="quick-demo-section">
-          <span class="quick-demo-title">QUICK DEMO ACCOUNTS</span>
-          <div class="quick-demo-buttons">
-            <button class="btn btn-ghost btn-sm" id="demoAdminBtn">⚡ Login as Admin (admin)</button>
-            <button class="btn btn-ghost btn-sm" id="demoUserBtn">👤 Login as User (user)</button>
+          <span class="quick-demo-title">SYSTEM LOGIN CREDENTIALS</span>
+          <div class="credentials-card">
+            <div class="credential-row">
+              <span class="cred-label">Admin ID:</span>
+              <span class="cred-value"><code>admin</code></span>
+            </div>
+            <div class="credential-row">
+              <span class="cred-label">Password:</span>
+              <span class="cred-value"><code>admin123</code></span>
+            </div>
           </div>
+          <button type="button" class="btn btn-ghost btn-block" id="demoAdminBtn">⚡ Fill Admin Credentials</button>
+          <p class="auth-footer-note">Additional administrator accounts can be created and managed from the Admin Dashboard.</p>
         </div>
       </div>
     </div>
@@ -589,10 +575,11 @@
     <div class="view-head view-head-row">
       <div>
         <h1>Admin Dashboard</h1>
-        <p class="view-subhead">System analytics, user access management, and hardware controls</p>
+        <p class="view-subhead">System analytics, Multi-Admin account control, and hardware maintenance</p>
       </div>
       <div class="view-head-actions">
         <button class="btn btn-secondary" data-goto="dashboard">⚡ Go to Real Page (Timetable Dashboard)</button>
+        <button class="btn btn-ghost" data-goto="diagnostics">🌐 Diagnostics</button>
         <button class="btn btn-ghost" id="refreshAdminStatsBtn">↻ Refresh Data</button>
       </div>
     </div>
@@ -601,11 +588,11 @@
     <div class="grid grid-four">
       <div class="panel stat-panel">
         <div class="stat-header">
-          <span class="panel-eyebrow">USERS COMMUNITY</span>
-          <span class="stat-icon">👥</span>
+          <span class="panel-eyebrow">ADMINISTRATORS NETWORK</span>
+          <span class="stat-icon">🛡️</span>
         </div>
         <div class="stat-number" id="statTotalUsers">—</div>
-        <div class="stat-details" id="statUsersBreakdown">Admins: — | Normal Users: —</div>
+        <div class="stat-details" id="statUsersBreakdown">Multi-Admin System Active</div>
       </div>
 
       <div class="panel stat-panel">
@@ -628,7 +615,7 @@
 
       <div class="panel stat-panel">
         <div class="stat-header">
-          <span class="panel-eyebrow">AUDIT & LOGS</span>
+          <span class="panel-eyebrow">AUDIT & SECURITY LOGS</span>
           <span class="stat-icon">📜</span>
         </div>
         <div class="stat-number" id="statTotalLogs">—</div>
@@ -639,27 +626,28 @@
     <!-- MAIN ADMIN PANELS -->
     <div class="grid grid-two">
 
-      <!-- USER MANAGEMENT TABLE PANEL -->
+      <!-- MULTI-ADMIN MANAGEMENT PANEL -->
       <div class="panel">
         <div class="panel-head panel-head-row">
-          <span class="panel-eyebrow">REGISTERED USERS DIRECTORY</span>
-          <button class="btn btn-ghost btn-sm" id="toggleAddUserBtn">+ Register User</button>
+          <div>
+            <span class="panel-eyebrow">MULTI-ADMIN ACCESS CONTROL</span>
+            <h3 style="margin: 4px 0 0; font-size: 16px;">System Administrators</h3>
+          </div>
+          <button class="btn btn-ghost btn-sm" id="toggleAddUserBtn">+ Create New Admin</button>
         </div>
 
-        <!-- INLINE ADD USER FORM -->
+        <!-- INLINE CREATE ADMIN FORM -->
         <form class="inline-add-form" id="adminAddUserForm" hidden>
-          <h4>Register New Account</h4>
+          <h4>Create New Administrator Account</h4>
+          <p class="settings-note" style="margin-bottom: 12px;">Create admin credentials. New administrators will have full privileges to edit timetables, fire relays, and manage settings.</p>
           <div class="form-grid-three">
-            <input type="text" id="adminNewUsername" placeholder="Username" required>
-            <input type="email" id="adminNewEmail" placeholder="Email (optional)">
-            <input type="password" id="adminNewPassword" placeholder="Password" required>
+            <input type="text" id="adminNewUsername" placeholder="Admin User ID (min 3 chars)" required autocomplete="off">
+            <input type="email" id="adminNewEmail" placeholder="Email Address (optional)">
+            <input type="password" id="adminNewPassword" placeholder="Password (min 4 chars)" required autocomplete="new-password">
+            <input type="password" id="adminNewPasswordConfirm" placeholder="Confirm Password" required autocomplete="new-password">
           </div>
-          <div class="form-row-flex">
-            <select id="adminNewRole">
-              <option value="user" selected>Role: Normal User</option>
-              <option value="admin">Role: Administrator</option>
-            </select>
-            <button type="submit" class="btn btn-primary btn-sm">Create User</button>
+          <div class="form-row-flex" style="margin-top: 10px;">
+            <button type="submit" class="btn btn-primary btn-sm" id="submitNewAdminBtn">Create Admin Account</button>
             <button type="button" class="btn btn-ghost btn-sm" id="cancelAddUserBtn">Cancel</button>
           </div>
         </form>
@@ -669,15 +657,15 @@
             <thead>
               <tr>
                 <th>ID</th>
-                <th>Username</th>
+                <th>Admin User ID</th>
                 <th>Role</th>
-                <th>Joined</th>
+                <th>Created</th>
                 <th>Last Login</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="usersTableBody">
-              <tr class="empty-row"><td colspan="6">Loading users…</td></tr>
+              <tr class="empty-row"><td colspan="6">Loading administrators…</td></tr>
             </tbody>
           </table>
         </div>
@@ -687,9 +675,10 @@
       <div class="panel">
         <div class="panel-head">
           <span class="panel-eyebrow">SYSTEM OPERATIONS & MAINTENANCE</span>
+          <h3 style="margin: 4px 0 0; font-size: 16px;">Hardware & System Actions</h3>
         </div>
         
-        <div class="admin-action-list">
+        <div class="admin-action-list" style="margin-top: 15px;">
           <div class="admin-action-item">
             <div>
               <strong>Hardware Mock Mode</strong>
@@ -727,9 +716,58 @@
       </div>
 
     </div>
+
+    <!-- RECENT AUDIT LOGS PANEL -->
+    <div class="panel" style="margin-top: 25px;">
+      <div class="panel-head panel-head-row">
+        <div>
+          <span class="panel-eyebrow">SYSTEM AUDIT TRAIL</span>
+          <h3 style="margin: 4px 0 0; font-size: 16px;">Recent Administrative & Hardware Activity</h3>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-goto="logs">View All Logs →</button>
+      </div>
+      <div class="table-wrap">
+        <table class="schedule-table" id="adminRecentLogsTable">
+          <thead>
+            <tr>
+              <th style="width: 170px;">Timestamp</th>
+              <th style="width: 90px;">Level</th>
+              <th style="width: 220px;">Event</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="adminRecentLogsBody">
+            <tr class="empty-row"><td colspan="4">Loading recent activity…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
 </main>
+
+<!-- ============================== CHANGE PASSWORD MODAL ============================== -->
+<div class="modal-backdrop" id="changePasswordModal" hidden>
+  <div class="modal">
+    <h3 id="changePasswordTitle">Change Administrator Password</h3>
+    <p id="changePasswordBody" class="settings-note" style="margin-bottom: 16px;">Set a new password for administrator account: <strong id="changePasswordTargetName">—</strong></p>
+    <form id="changePasswordForm">
+      <input type="hidden" id="changePasswordUserId">
+      <label class="field" style="margin-bottom: 12px;">
+        <span>New Password</span>
+        <input type="password" id="newAdminPasswordInput" placeholder="Minimum 4 characters" required minlength="4">
+      </label>
+      <label class="field" style="margin-bottom: 18px;">
+        <span>Confirm New Password</span>
+        <input type="password" id="confirmNewAdminPasswordInput" placeholder="Re-enter new password" required minlength="4">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="changePasswordCancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="changePasswordSubmit">Update Password</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- ============================== TEST BELL CONFIRM MODAL ============================== -->
 <div class="modal-backdrop" id="confirmModal" hidden>
